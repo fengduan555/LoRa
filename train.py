@@ -195,6 +195,7 @@ def main():
             {"params": text_nodecay, "lr": args.text_lr, "weight_decay": 0.0},
         ]
     )
+    base_lrs = [group["lr"] for group in optimizer.param_groups]
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lr_lambda_factory(args.warmup, args.steps)
     )
@@ -267,6 +268,9 @@ def main():
                 optimizer.load_state_dict(ck["optimizer"])
             if "scheduler" in ck:
                 scheduler.load_state_dict(ck["scheduler"])
+            for group, lr in zip(optimizer.param_groups, base_lrs):
+                group["lr"] = lr
+            scheduler.base_lrs = list(base_lrs)
             if ck.get("ema"):
                 ema.shadow = {k: v.to(device) for k, v in ck["ema"].items()}
             step = ck.get("step", 0)

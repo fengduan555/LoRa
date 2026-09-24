@@ -29,11 +29,11 @@ text_dim = 256
 text_depth = 3
 text_heads = 4
 
-batch_size = 16
-lr = 1e-4
+batch_size = 24
+lr = 2e-4
 text_lr = 3e-4
 weight_decay = 0.01
-warmup = 2000
+warmup = 4000
 steps = 60000
 grad_clip = 1.0
 ema_decay = 0.9999

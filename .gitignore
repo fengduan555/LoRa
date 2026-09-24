@@ -40,3 +40,6 @@ desktop.ini
 .vscode/*
 !.vscode/settings.json
 !.vscode/launch.json
+
+# ===== 本地 idea / 笔记（不进仓库）=====
+ideas/

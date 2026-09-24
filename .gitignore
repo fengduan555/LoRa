@@ -1,0 +1,41 @@
+# ===== 数据集 =====
+data/
+
+# ===== 训练产物 / 采样 / checkpoint =====
+outputs/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# ===== 下载的模型 / 缓存 =====
+cache/
+models/
+*.onnx
+
+# ===== 日志 =====
+*.log
+download.log
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+.env
+
+# ===== 编辑器 / 系统 =====
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== VSCode: 只保留共享配置 =====
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json

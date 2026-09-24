@@ -4,13 +4,11 @@ ROOT = Path(__file__).resolve().parent
 
 DATA_RAW = ROOT / "data" / "raw"
 DATA_PROCESSED = ROOT / "data" / "processed"
-METADATA = ROOT / "data2" / "metadata2.jsonl"
-VOCAB_PATH = ROOT / "data2" / "vocab2.json"
+METADATA = ROOT / "data" / "metadata.jsonl"
+VOCAB_PATH = ROOT / "data" / "vocab.json"
 OUTPUTS = ROOT / "outputs"
 CKPT_DIR = OUTPUTS / "ckpt"
 SAMPLE_DIR = OUTPUTS / "samples"
-TRAIN_OUT = OUTPUTS / "v2"
-TRAIN_SAMPLE_OUT = OUTPUTS / "samples" / "v2"
 
 resolution = 64
 quantize_colors = 32
@@ -20,25 +18,24 @@ max_vocab = 6000
 
 patch_size = 4
 in_channels = 3
-dim = 512
-depth = 16
-heads = 8
+dim = 384
+depth = 12
+heads = 6
 mlp_ratio = 4.0
-grad_checkpoint = True
+grad_checkpoint = False
 text_dim = 256
 text_depth = 3
 text_heads = 4
 
-batch_size = 16
+batch_size = 32
 lr = 1e-4
 text_lr = 3e-4
 weight_decay = 0.01
 warmup = 2000
-steps = 60000
+steps = 80000
 grad_clip = 1.0
 ema_decay = 0.9999
 null_prob = 0.1
-augment = True
 num_workers = 4
 log_every = 50
 sample_every = 2000

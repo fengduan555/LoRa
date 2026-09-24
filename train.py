@@ -120,6 +120,7 @@ def main():
     parser.add_argument("--metadata", default=str(config.METADATA))
     parser.add_argument("--vocab", default=str(config.VOCAB_PATH))
     parser.add_argument("--out", default=str(config.OUTPUTS))
+    parser.add_argument("--sample-out", default=None)
     parser.add_argument("--res", type=int, default=config.resolution)
     parser.add_argument("--dim", type=int, default=config.dim)
     parser.add_argument("--depth", type=int, default=config.depth)
@@ -153,7 +154,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     out_dir = Path(args.out)
     ckpt_dir = out_dir / "ckpt"
-    sample_dir = out_dir / "samples"
+    sample_dir = Path(args.sample_out) if args.sample_out else out_dir / "samples"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     sample_dir.mkdir(parents=True, exist_ok=True)
 

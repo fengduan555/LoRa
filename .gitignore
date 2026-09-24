@@ -1,5 +1,6 @@
 # ===== 数据集 =====
 data/
+data2/
 
 # ===== 训练产物 / 采样 / checkpoint =====
 outputs/

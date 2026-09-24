@@ -22,7 +22,8 @@ SAMPLE_PROMPTS = config.sample_prompts
 
 
 class PixelDataset(Dataset):
-    def __init__(self, metadata_path):
+    def __init__(self, metadata_path, augment=False):
+        self.augment = augment
         self.items = [
             json.loads(line)
             for line in Path(metadata_path).read_text(encoding="utf-8").splitlines()
@@ -40,6 +41,8 @@ class PixelDataset(Dataset):
         img = Image.open(path).convert("RGB")
         arr = np.asarray(img, dtype=np.float32) / 127.5 - 1.0
         x = torch.from_numpy(arr).permute(2, 0, 1).contiguous()
+        if self.augment and torch.rand(1).item() < 0.5:
+            x = torch.flip(x, dims=[2])
         return x, item.get("tags", [])
 
 
@@ -134,6 +137,7 @@ def main():
     parser.add_argument("--ema-decay", type=float, default=config.ema_decay)
     parser.add_argument("--null-prob", type=float, default=config.null_prob)
     parser.add_argument("--grad-checkpoint", action="store_true", default=config.grad_checkpoint)
+    parser.add_argument("--augment", action="store_true")
     parser.add_argument("--num-workers", type=int, default=config.num_workers)
     parser.add_argument("--log-every", type=int, default=config.log_every)
     parser.add_argument("--sample-every", type=int, default=config.sample_every)
@@ -154,7 +158,7 @@ def main():
     sample_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = TagTokenizer.load(args.vocab)
-    dataset = PixelDataset(args.metadata)
+    dataset = PixelDataset(args.metadata, augment=args.augment)
     loader = DataLoader(
         dataset,
         batch_size=args.batch_size,

@@ -151,6 +151,9 @@ def main():
     parser.add_argument("--augment", action="store_true", default=config.augment)
     parser.add_argument("--loss-spike-factor", type=float, default=config.loss_spike_factor)
     parser.add_argument("--loss-spike-burn-in", type=int, default=config.loss_spike_burn_in)
+    parser.add_argument("--loss-spike-abs-cap", type=float, default=config.loss_spike_abs_cap)
+    parser.add_argument("--loss-spike-baseline-decay", type=float, default=config.loss_spike_baseline_decay)
+    parser.add_argument("--milestone-every", type=int, default=config.milestone_every)
     parser.add_argument("--num-workers", type=int, default=config.num_workers)
     parser.add_argument("--log-every", type=int, default=config.log_every)
     parser.add_argument("--sample-every", type=int, default=config.sample_every)
@@ -245,27 +248,40 @@ def main():
             sample_dir / f"step_{step:07d}.png",
         )
 
+    milestone_dir = out_dir / "milestones"
+    milestone_dir.mkdir(parents=True, exist_ok=True)
+    best_path = out_dir / "best.pt"
+
+    def _state(step, include_optim):
+        out = {
+            "step": step,
+            "model": dit.state_dict(),
+            "text_encoder": text_encoder.state_dict(),
+            "ema": ema.shadow,
+            "itos": tokenizer.tokens,
+            "hash_buckets": tokenizer.hash_buckets,
+            "model_cfg": model_cfg,
+            "text_cfg": text_cfg,
+        }
+        if include_optim:
+            out["optimizer"] = optimizer.state_dict()
+            out["scheduler"] = scheduler.state_dict()
+        return out
+
     def save_ckpt(step):
         path = ckpt_dir / f"ckpt_{step:07d}.pt"
-        torch.save(
-            {
-                "step": step,
-                "model": dit.state_dict(),
-                "text_encoder": text_encoder.state_dict(),
-                "ema": ema.shadow,
-                "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
-                "itos": tokenizer.tokens,
-                "hash_buckets": tokenizer.hash_buckets,
-                "model_cfg": model_cfg,
-                "text_cfg": text_cfg,
-            },
-            path,
-        )
+        torch.save(_state(step, True), path)
         ckpts = sorted(ckpt_dir.glob("ckpt_*.pt"), key=lambda p: int(p.stem.split("_")[1]))
         for old in ckpts[: max(0, len(ckpts) - args.keep_last)]:
             old.unlink()
+        if args.milestone_every > 0 and step % args.milestone_every == 0:
+            torch.save(_state(step, False), milestone_dir / f"milestone_{step:07d}.pt")
+            print(f"saved milestone_{step:07d}.pt")
         print(f"saved {path.name}")
+
+    def save_best(step, running):
+        torch.save(_state(step, False), best_path)
+        print(f"saved best.pt (step {step}, loss {running:.4f})")
 
     dit.train()
     text_encoder.train()
@@ -290,6 +306,9 @@ def main():
     t0 = time.time()
     running = None
     skipped = 0
+    baseline = None
+    best = float("inf")
+    last_best_step = 0
     while step < args.steps:
         for imgs, tags in loader:
             x0 = imgs.to(device, non_blocking=True)
@@ -314,20 +333,21 @@ def main():
                 loss = F.mse_loss(pred.float(), target.float())
 
             loss_val = loss.item()
-            is_spike = (
-                step >= args.loss_spike_burn_in
-                and running is not None
-                and running > 0
-                and loss_val > args.loss_spike_factor * running
-            )
+            finite = math.isfinite(loss_val)
+            is_spike = False
+            if step >= args.loss_spike_burn_in and baseline is not None:
+                if (
+                    not finite
+                    or loss_val > args.loss_spike_abs_cap
+                    or loss_val > args.loss_spike_factor * baseline
+                ):
+                    is_spike = True
             if is_spike:
                 skipped += 1
                 optimizer.zero_grad(set_to_none=True)
                 if skipped % 20 == 1:
-                    print(
-                        f"[skip] loss spike {loss_val:.4f} > "
-                        f"{args.loss_spike_factor}*{running:.4f} (skipped={skipped})"
-                    )
+                    b = "n/a" if baseline is None else f"{baseline:.4f}"
+                    print(f"[skip] loss={loss_val} baseline={b} (skipped={skipped})")
                 continue
 
             loss.backward()
@@ -340,6 +360,17 @@ def main():
 
             step += 1
             running = loss_val if running is None else 0.95 * running + 0.05 * loss_val
+            if baseline is None:
+                baseline = loss_val
+            else:
+                baseline = (
+                    args.loss_spike_baseline_decay * baseline
+                    + (1.0 - args.loss_spike_baseline_decay) * loss_val
+                )
+            if running < best and step - last_best_step >= 2000:
+                best = running
+                last_best_step = step
+                save_best(step, running)
             if step % args.log_every == 0:
                 sec = (time.time() - t0) / args.log_every
                 print(

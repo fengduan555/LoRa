@@ -9,11 +9,11 @@ VOCAB_PATH = ROOT / "data2" / "vocab2.json"
 OUTPUTS = ROOT / "outputs"
 CKPT_DIR = OUTPUTS / "ckpt"
 SAMPLE_DIR = OUTPUTS / "samples"
-TRAIN_OUT = OUTPUTS / "v4"
-TRAIN_SAMPLE_OUT = OUTPUTS / "samples" / "v4"
+TRAIN_OUT = OUTPUTS / "v5"
+TRAIN_SAMPLE_OUT = OUTPUTS / "samples" / "v5"
 
-resolution = 64
-quantize_colors = 32
+resolution = 128
+quantize_colors = 64
 hash_buckets = 2048
 max_tags = 64
 max_vocab = 8000
@@ -29,7 +29,7 @@ text_dim = 256
 text_depth = 3
 text_heads = 4
 
-batch_size = 24
+batch_size = 16
 lr = 1e-4
 text_lr = 3e-4
 weight_decay = 0.01
@@ -60,5 +60,5 @@ sample_prompts = [
     "pixel_art, cat, animal, simple_background",
 ]
 
-upscale = 8
-palette = 32
+upscale = 4
+palette = 64

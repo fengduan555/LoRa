@@ -20,6 +20,15 @@ from vocab import TagTokenizer
 ROOT = config.ROOT
 SAMPLE_PROMPTS = config.sample_prompts
 
+NO_FLIP = {
+    "from_side", "facing_left", "facing_right", "from_behind", "profile",
+    "from_above", "from_below", "looking_away",
+    "text", "english_text", "speech_bubble", "dialogue_box", "signature",
+    "watermark", "logo", "hair_over_one_eye", "one_eye_closed",
+    "asymmetrical_hair", "side_ponytail", "single_hair_bun", "left-handed",
+    "holding_sword", "holding_weapon", "english_text",
+}
+
 
 class PixelDataset(Dataset):
     def __init__(self, metadata_path, augment=False):
@@ -41,9 +50,10 @@ class PixelDataset(Dataset):
         img = Image.open(path).convert("RGB")
         arr = np.asarray(img, dtype=np.float32) / 127.5 - 1.0
         x = torch.from_numpy(arr).permute(2, 0, 1).contiguous()
-        if self.augment and torch.rand(1).item() < 0.5:
+        tags = item.get("tags", [])
+        if self.augment and torch.rand(1).item() < 0.5 and not (set(tags) & NO_FLIP):
             x = torch.flip(x, dims=[2])
-        return x, item.get("tags", [])
+        return x, tags
 
 
 def collate(batch):
@@ -139,6 +149,8 @@ def main():
     parser.add_argument("--null-prob", type=float, default=config.null_prob)
     parser.add_argument("--grad-checkpoint", action="store_true", default=config.grad_checkpoint)
     parser.add_argument("--augment", action="store_true", default=config.augment)
+    parser.add_argument("--loss-spike-factor", type=float, default=config.loss_spike_factor)
+    parser.add_argument("--loss-spike-burn-in", type=int, default=config.loss_spike_burn_in)
     parser.add_argument("--num-workers", type=int, default=config.num_workers)
     parser.add_argument("--log-every", type=int, default=config.log_every)
     parser.add_argument("--sample-every", type=int, default=config.sample_every)
@@ -277,6 +289,7 @@ def main():
             print(f"resumed {ckpts[-1].name} at step {step}")
     t0 = time.time()
     running = None
+    skipped = 0
     while step < args.steps:
         for imgs, tags in loader:
             x0 = imgs.to(device, non_blocking=True)
@@ -299,6 +312,24 @@ def main():
                 tokens, pooled = text_encoder(ids, mask)
                 pred = dit(xt, t, tokens, mask, pooled)
                 loss = F.mse_loss(pred.float(), target.float())
+
+            loss_val = loss.item()
+            is_spike = (
+                step >= args.loss_spike_burn_in
+                and running is not None
+                and running > 0
+                and loss_val > args.loss_spike_factor * running
+            )
+            if is_spike:
+                skipped += 1
+                optimizer.zero_grad(set_to_none=True)
+                if skipped % 20 == 1:
+                    print(
+                        f"[skip] loss spike {loss_val:.4f} > "
+                        f"{args.loss_spike_factor}*{running:.4f} (skipped={skipped})"
+                    )
+                continue
+
             loss.backward()
             torch.nn.utils.clip_grad_norm_(
                 list(dit.parameters()) + list(text_encoder.parameters()), args.grad_clip
@@ -308,7 +339,7 @@ def main():
             ema.update({"dit": dit, "text": text_encoder})
 
             step += 1
-            running = loss.item() if running is None else 0.95 * running + 0.05 * loss.item()
+            running = loss_val if running is None else 0.95 * running + 0.05 * loss_val
             if step % args.log_every == 0:
                 sec = (time.time() - t0) / args.log_every
                 print(

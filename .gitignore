@@ -16,6 +16,7 @@ models/
 
 # ===== 日志 =====
 *.log
+logs/
 download.log
 
 # ===== Python =====

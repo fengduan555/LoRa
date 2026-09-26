@@ -153,6 +153,7 @@ def main():
     parser.add_argument("--loss-spike-burn-in", type=int, default=config.loss_spike_burn_in)
     parser.add_argument("--loss-spike-abs-cap", type=float, default=config.loss_spike_abs_cap)
     parser.add_argument("--loss-spike-baseline-decay", type=float, default=config.loss_spike_baseline_decay)
+    parser.add_argument("--loss-warn-factor", type=float, default=config.loss_warn_factor)
     parser.add_argument("--milestone-every", type=int, default=config.milestone_every)
     parser.add_argument("--num-workers", type=int, default=config.num_workers)
     parser.add_argument("--log-every", type=int, default=config.log_every)
@@ -309,6 +310,9 @@ def main():
     baseline = None
     best = float("inf")
     last_best_step = 0
+    all_running = None
+    all_min = None
+    last_warn = 0
     while step < args.steps:
         for imgs, tags in loader:
             x0 = imgs.to(device, non_blocking=True)
@@ -334,20 +338,44 @@ def main():
 
             loss_val = loss.item()
             finite = math.isfinite(loss_val)
+
+            if finite:
+                all_running = loss_val if all_running is None else 0.99 * all_running + 0.01 * loss_val
+                all_min = all_running if all_min is None else min(all_min, all_running)
+
             is_spike = False
             if step >= args.loss_spike_burn_in and baseline is not None:
                 if (
                     not finite
-                    or loss_val > args.loss_spike_abs_cap
-                    or loss_val > args.loss_spike_factor * baseline
+                    or loss_val > max(args.loss_spike_abs_cap, args.loss_spike_factor * baseline)
                 ):
                     is_spike = True
+
+            if finite:
+                baseline = loss_val if baseline is None else (
+                    args.loss_spike_baseline_decay * baseline
+                    + (1.0 - args.loss_spike_baseline_decay) * loss_val
+                )
+
+            if (
+                all_running is not None
+                and all_min is not None
+                and all_running > args.loss_warn_factor * all_min
+                and step - last_warn >= 1000
+            ):
+                last_warn = step
+                print(
+                    f"[warn] all-loss {all_running:.4f} > {args.loss_warn_factor}x min "
+                    f"{all_min:.4f} at step {step}"
+                )
+
             if is_spike:
                 skipped += 1
                 optimizer.zero_grad(set_to_none=True)
                 if skipped % 20 == 1:
                     b = "n/a" if baseline is None else f"{baseline:.4f}"
-                    print(f"[skip] loss={loss_val} baseline={b} (skipped={skipped})")
+                    av = "n/a" if all_running is None else f"{all_running:.4f}"
+                    print(f"[skip] loss={loss_val} all={av} baseline={b} (skipped={skipped})")
                 continue
 
             loss.backward()
@@ -360,21 +388,15 @@ def main():
 
             step += 1
             running = loss_val if running is None else 0.95 * running + 0.05 * loss_val
-            if baseline is None:
-                baseline = loss_val
-            else:
-                baseline = (
-                    args.loss_spike_baseline_decay * baseline
-                    + (1.0 - args.loss_spike_baseline_decay) * loss_val
-                )
             if running < best and step - last_best_step >= 2000:
                 best = running
                 last_best_step = step
                 save_best(step, running)
             if step % args.log_every == 0:
                 sec = (time.time() - t0) / args.log_every
+                av = "n/a" if all_running is None else f"{all_running:.4f}"
                 print(
-                    f"step {step} loss {running:.4f} lr {scheduler.get_last_lr()[0]:.2e} "
+                    f"step {step} loss {running:.4f} all {av} lr {scheduler.get_last_lr()[0]:.2e} "
                     f"{sec:.2f}s/it"
                 )
                 t0 = time.time()
